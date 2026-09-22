@@ -1,14 +1,17 @@
 services:
-  frontend:
-    build:
-      context: ./apps/frontend
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: binder
+      POSTGRES_PASSWORD: binder
+      POSTGRES_DB: binder
     ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-
-  backend:
-    build:
-      context: ./apps/backend
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  redis:
+    image: redis:7
     ports:
-      - "3001:3001"
+      - "6379:6379"
+volumes:
+  pgdata:
