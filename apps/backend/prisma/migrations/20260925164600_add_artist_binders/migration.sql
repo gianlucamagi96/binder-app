@@ -1,0 +1,3 @@
+ALTER TYPE "BinderType" ADD VALUE 'ARTIST';
+
+ALTER TABLE "Binder" ADD COLUMN "artistName" TEXT;

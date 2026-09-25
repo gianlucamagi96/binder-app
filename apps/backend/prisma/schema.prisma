@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  username  String   @unique
+
+  passwordHash String?
+  googleId     String? @unique
+  avatarUrl    String?
+
+  hashedRefreshToken String?
+
+  passwordResetToken      String?   @unique
+  passwordResetExpiresAt  DateTime?
+
+  activeTcgGameCode String?
+
+  binders   Binder[]
+  wishlists Wishlist[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Contenitore nominato: un utente può avere più wishlist.
+model Wishlist {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name String
+
+  items WishlistItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// Carta desiderata. Il pricing (target_price) è in pausa.
+model WishlistItem {
+  id         String   @id @default(uuid())
+  wishlistId String
+  wishlist   Wishlist @relation(fields: [wishlistId], references: [id], onDelete: Cascade)
+
+  tcgdexCardId String
+  note         String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([wishlistId, tcgdexCardId])
+}
+
+enum TcgGameStatus {
+  ACTIVE
+  COMING_SOON
+}
+
+model TcgGame {
+  id        String        @id @default(uuid())
+  code      String        @unique
+  name      String
+  icon      String?
+  status    TcgGameStatus
+  createdAt DateTime      @default(now())
+}
+
+enum BinderType {
+  GAME
+  EXPANSION
+  FREE
+  ARTIST
+}
+
+model Binder {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  type        BinderType
+  tcgGameCode String?
+  artistName  String?
+  rows        Int
+  cols        Int
+  coverStyle  String?
+
+  expansions BinderExpansion[]
+  pages      BinderPage[]
+
+  createdAt DateTime @default(now())
+}
+
+// Tabella di giunzione: un binder di tipo EXPANSION può collegare più
+// espansioni TCGdex (il checklist generato le concatena in ordine).
+model BinderExpansion {
+  id     String @id @default(uuid())
+  binder Binder @relation(fields: [binderId], references: [id], onDelete: Cascade)
+
+  binderId          String
+  tcgdexExpansionId String
+
+  @@unique([binderId, tcgdexExpansionId])
+}
+
+model BinderPage {
+  id     String @id @default(uuid())
+  binder Binder @relation(fields: [binderId], references: [id], onDelete: Cascade)
+
+  binderId   String
+  pageNumber Int
+
+  slots BinderSlot[]
+
+  @@unique([binderId, pageNumber])
+}
+
+model BinderSlot {
+  id   String     @id @default(uuid())
+  page BinderPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  pageId String
+  // Indice nella griglia rows*cols della pagina (0-based).
+  position Int
+
+  // null = busta vuota. Valorizzato + quantity 0 = nota ma non posseduta
+  // (grayscale). Valorizzato + quantity >= 1 = posseduta (a colori).
+  tcgdexCardId String?
+  quantity     Int     @default(0)
+  condition    String?
+
+  @@unique([pageId, position])
+}
