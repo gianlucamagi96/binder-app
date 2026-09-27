@@ -103,7 +103,7 @@ export type AddCardToBinderResult = {
 export async function addCardToBinder(
   binderId: string,
   tcgdexCardId: string,
-  options?: { quantity?: number; condition?: string | null },
+  options?: { quantity?: number; condition?: string | null; expandIfFull?: boolean },
 ): Promise<AddCardToBinderResult> {
   const quantity = Math.max(1, options?.quantity ?? 1);
   const condition = options?.condition ?? null;
@@ -133,6 +133,17 @@ export async function addCardToBinder(
         condition,
       });
       return { slot, pageNumber, mode: "empty" };
+    }
+  }
+
+  if (options?.expandIfFull) {
+    const created = await fetch(`/api/binders/${binderId}/pages`, { method: "POST" });
+    if (created.ok) {
+      return addCardToBinder(binderId, tcgdexCardId, {
+        quantity,
+        condition,
+        expandIfFull: false,
+      });
     }
   }
 

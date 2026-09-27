@@ -39,7 +39,7 @@ export function Card({
       <div className="flex flex-col gap-0.5 px-1 pb-1.5">
         <p className="truncate text-sm font-semibold text-foreground">{card.name}</p>
         <p className="truncate text-xs text-foreground-muted">{card.set.name}</p>
-        {card.rarity && (
+        {card.rarity && card.rarity.toLowerCase() !== "none" && (
           <p className="truncate text-[11px] font-medium text-accent-text/80">{card.rarity}</p>
         )}
         {(card.types.length > 0 || card.hp !== null) && (

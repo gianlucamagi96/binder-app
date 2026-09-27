@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { AnimatePresence } from "framer-motion";
-import { BookMarked, Plus } from "lucide-react";
+import { BookMarked, Camera, Plus } from "lucide-react";
 import type { BinderListItem } from "@/lib/binders";
 import { BinderTile } from "@/components/BinderTile";
 import { BinderOverlay } from "@/components/BinderOverlay";
@@ -58,6 +58,10 @@ export default function BindersPage() {
         action={
           <>
             <BinderViewToggle view={view} onChange={setView} />
+            <Button href="/scan" variant="secondary">
+              <Camera className="h-4 w-4" aria-hidden />
+              Scansiona
+            </Button>
             <Button href="/binders/new" variant="ember">
               <Plus className="h-4 w-4" aria-hidden />
               Nuovo binder

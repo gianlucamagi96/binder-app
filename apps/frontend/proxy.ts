@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "@/lib/auth";
 
-const PROTECTED_PATHS = ["/dashboard", "/tcg-picker", "/binders"];
+const PROTECTED_PATHS = ["/dashboard", "/tcg-picker", "/binders", "/scan"];
 
 export function proxy(request: NextRequest) {
   const isProtected = PROTECTED_PATHS.some((path) =>
@@ -28,5 +28,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/tcg-picker/:path*", "/binders/:path*"],
+  matcher: ["/dashboard/:path*", "/tcg-picker/:path*", "/binders/:path*", "/scan", "/scan/:path*"],
 };

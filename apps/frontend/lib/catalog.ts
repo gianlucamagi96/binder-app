@@ -76,6 +76,34 @@ export async function fetchExpansionDetail(id: string): Promise<ExpansionDetail>
   return res.json();
 }
 
+export type IdentifyCard = {
+  id: string;
+  name: string;
+  image: string | null;
+  localId: string;
+  set: { id: string; name: string } | null;
+  score: number;
+  exactNumber: boolean;
+};
+
+export async function identifyCatalogCards(input: {
+  name?: string;
+  number?: string;
+}): Promise<IdentifyCard[]> {
+  const search = new URLSearchParams();
+  if (input.name?.trim()) search.set("name", input.name.trim());
+  if (input.number?.trim()) search.set("number", input.number.trim());
+  const res = await fetch(`${API_URL}/catalog/cards/identify?${search}`);
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = data?.message;
+    throw new Error(
+      Array.isArray(message) ? message.join(", ") : (message ?? "Ricerca nel catalogo fallita"),
+    );
+  }
+  return data.items ?? [];
+}
+
 export async function searchCatalogCards(
   q: string,
   options?: { limit?: number; page?: number },

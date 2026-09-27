@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,9 +12,17 @@ import {
   ExpansionDto,
   ExpansionSummaryDto,
   FeaturedCardDto,
+  IdentifyCardsDto,
   PaginatedCardSearchDto,
   PaginatedExpansionsDto,
 } from './catalog.types';
+import {
+  localIdFromCardId,
+  localIdQueryVariants,
+  parseCollectorNumber,
+  pickIdentifyResults,
+  rankIdentifyCandidates,
+} from './identify-cards';
 
 const CACHE_TTL_SECONDS = 60 * 60 * 12; // 12 ore: espansioni/carte cambiano raramente
 const SEARCH_CACHE_TTL_SECONDS = 60 * 60; // 1 ora: utile per query ripetute (Ctrl+K)
@@ -26,6 +35,14 @@ const EXCLUDED_SERIES = new Set(['tcgp']);
 
 function normalizeSearchText(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// TCGdex usa a volte la stringa "None" al posto di una rarità assente.
+function displayRarity(rarity: string | undefined | null) {
+  if (!rarity || rarity.trim().toLowerCase() === 'none') {
+    return '';
+  }
+  return rarity;
 }
 
 // Il campo `rarity` di TCGdex è testo libero, non un enum ordinato: non esiste
@@ -313,6 +330,94 @@ export class TcgdexService {
     );
   }
 
+  // Nome OCR + numero di collezione. Il numero, se torna, vince: stessa carta
+  // ristampata con lo stesso numero resta in shortlist e la sceglie l'utente.
+  async identifyCards(name: string, collectorNumber: string): Promise<IdentifyCardsDto> {
+    const normalizedName = normalizeSearchText(name);
+    const number = collectorNumber.trim();
+    const parsedNumber = parseCollectorNumber(number);
+    if (normalizedName.length < 2 && !parsedNumber) {
+      throw new BadRequestException(
+        'Servono il nome (almeno 2 lettere) o il numero di collezione',
+      );
+    }
+
+    const cacheKey = `catalog:cards:identify:${normalizedName}|${number.toLowerCase()}`;
+    const cached = await this.redis.getJSON<IdentifyCardsDto>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    type ListedCard = {
+      id: string;
+      name: string;
+      localId?: string;
+      image?: string;
+      getImageURL?: (quality: 'low' | 'high', extension: 'webp' | 'png' | 'jpg') => string;
+    };
+
+    const resumes = new Map<string, ListedCard>();
+    const remember = (cards: ListedCard[]) => {
+      for (const card of cards) {
+        resumes.set(card.id, card);
+      }
+    };
+
+    if (normalizedName.length >= 2) {
+      const byName = (await this.client.card.list(
+        new Query().like('name', normalizedName).paginate(1, 40),
+      )) as ListedCard[];
+      remember(byName);
+    }
+
+    if (parsedNumber) {
+      for (const variant of localIdQueryVariants(parsedNumber)) {
+        const byNumber = (await this.client.card
+          .list(new Query().equal('localId', variant).paginate(1, 24))
+          .catch((error) => {
+            this.logger.warn(`Query localId "${variant}" fallita: ${error}`);
+            return [];
+          })) as ListedCard[];
+        remember(byNumber);
+      }
+    }
+
+    const ranked = pickIdentifyResults(
+      rankIdentifyCandidates(
+        [...resumes.values()].map((card) => ({
+          id: card.id,
+          name: card.name,
+          localId: card.localId || localIdFromCardId(card.id),
+        })),
+        { name: normalizedName, number },
+      ),
+    );
+
+    const items = await Promise.all(
+      ranked.map(async (hit) => {
+        const resume = resumes.get(hit.id);
+        const detail = await this.getCardDetail(hit.id);
+        const image =
+          resume?.image && resume.getImageURL
+            ? resume.getImageURL('low', 'webp')
+            : (detail?.image ?? null);
+        return {
+          id: hit.id,
+          name: hit.name,
+          image,
+          localId: hit.localId,
+          set: detail?.set ?? null,
+          score: hit.score,
+          exactNumber: hit.exactNumber,
+        };
+      }),
+    );
+
+    const dto: IdentifyCardsDto = { items };
+    await this.redis.setJSON(cacheKey, dto, SEARCH_CACHE_TTL_SECONDS);
+    return dto;
+  }
+
   private async runCardSearch(
     cacheKey: string,
     searchQuery: Query,
@@ -352,7 +457,7 @@ export class TcgdexService {
   }
 
   async getFeaturedCards(limit: number): Promise<FeaturedCardDto[]> {
-    const cacheKey = `catalog:cards:featured:${limit}`;
+    const cacheKey = `catalog:cards:featured:v2:${limit}`;
     const cached = await this.redis.getJSON<FeaturedCardDto[]>(cacheKey);
     if (cached) {
       return cached;
@@ -375,7 +480,7 @@ export class TcgdexService {
         id: card.id,
         name: card.name,
         image: card.image ? card.getImageURL('high', 'webp') : null,
-        rarity: card.rarity,
+        rarity: displayRarity(card.rarity),
         hp: card.hp ?? null,
         types: card.types ?? [],
         set: { id: card.set.id, name: card.set.name },
@@ -462,7 +567,7 @@ export class TcgdexService {
   }
 
   private async findMostRecentMainlineSetId(): Promise<string | null> {
-    const query = new Query().sort('releaseDate', 'DESC').paginate(1, 30);
+    const query = new Query().sort('releaseDate', 'DESC').paginate(1, 40);
     const resumes = await this.client.set.list(query);
 
     for (const resume of resumes) {
@@ -470,7 +575,13 @@ export class TcgdexService {
         continue;
       }
       const set = await this.client.set.get(resume.id);
-      if (set && !EXCLUDED_SERIES.has(set.serie.id)) {
+      // I set appena usciti spesso non hanno ancora gli artwork: saltarli,
+      // altrimenti la home mostra solo il nome dentro un riquadro vuoto.
+      if (
+        set &&
+        !EXCLUDED_SERIES.has(set.serie.id) &&
+        set.cards.some((card) => Boolean(card.image))
+      ) {
         return set.id;
       }
     }
@@ -497,10 +608,11 @@ export class TcgdexService {
         return [];
       });
       for (const match of matches) {
-        if (!seen.has(match.id)) {
-          seen.add(match.id);
-          selected.push(match.id);
+        if (!match.image || seen.has(match.id)) {
+          continue;
         }
+        seen.add(match.id);
+        selected.push(match.id);
       }
     }
 
@@ -514,10 +626,11 @@ export class TcgdexService {
           if (selected.length >= limit) {
             break;
           }
-          if (!seen.has(card.id)) {
-            seen.add(card.id);
-            selected.push(card.id);
+          if (!card.image || seen.has(card.id)) {
+            continue;
           }
+          seen.add(card.id);
+          selected.push(card.id);
         }
       }
     }

@@ -42,6 +42,23 @@ export type PaginatedCardSearchDto = {
   hasMore: boolean;
 };
 
+export type IdentifyCardDto = {
+  id: string;
+  name: string;
+  image: string | null;
+  localId: string;
+  set: {
+    id: string;
+    name: string;
+  } | null;
+  score: number;
+  exactNumber: boolean;
+};
+
+export type IdentifyCardsDto = {
+  items: IdentifyCardDto[];
+};
+
 export type ExpansionSummaryDto = {
   id: string;
   name: string;

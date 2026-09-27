@@ -3,6 +3,7 @@ import { TcgdexService } from './tcgdex.service';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { SearchQueryDto } from './dto/search-query.dto';
 import { ExpansionsQueryDto } from './dto/expansions-query.dto';
+import { IdentifyCardsQueryDto } from './dto/identify-cards-query.dto';
 
 const DEFAULT_EXPANSIONS_LIMIT = 10;
 const DEFAULT_FEATURED_LIMIT = 12;
@@ -39,6 +40,11 @@ export class CatalogController {
     return this.tcgdexService.getFeaturedCards(
       query.limit ?? DEFAULT_FEATURED_LIMIT,
     );
+  }
+
+  @Get('cards/identify')
+  identifyCards(@Query() query: IdentifyCardsQueryDto) {
+    return this.tcgdexService.identifyCards(query.name ?? '', query.number ?? '');
   }
 
   @Get('cards/search')

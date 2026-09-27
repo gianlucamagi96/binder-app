@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { BookOpen, Heart, Home, Layers, LogOut, Search, Sparkles } from "lucide-react";
+import { BookOpen, Camera, Heart, Home, Layers, LogOut, Search, Sparkles } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { API_URL, type TcgGame } from "@/lib/auth";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -14,6 +14,7 @@ import { TcgGameIcon } from "@/components/TcgGameIcon";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/binders", label: "Binder", icon: BookOpen },
+  { href: "/scan", label: "Scan", icon: Camera },
   { href: "/catalogo", label: "Catalogo", icon: Layers },
   { href: "/wishlist", label: "Wishlist", icon: Heart },
 ] as const;
