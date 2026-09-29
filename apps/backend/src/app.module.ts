@@ -12,6 +12,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { BindersModule } from './binders/binders.module';
 import { WishlistModule } from './wishlist/wishlist.module';
 import { ChatModule } from './chat/chat.module';
+import { ScansModule } from './scans/scans.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ChatModule } from './chat/chat.module';
     BindersModule,
     WishlistModule,
     ChatModule,
+    ScansModule,
   ],
   controllers: [AppController, HealthController],
   providers: [AppService],

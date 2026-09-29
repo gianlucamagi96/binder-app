@@ -4,7 +4,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { API_URL, type TcgGame } from "@/lib/auth";
 import type { Expansion } from "@/lib/catalog";
-import type { BinderType } from "@/lib/binders";
+import { addCardToBinder, type BinderType } from "@/lib/binders";
+import { clearScanSeed, readScanSeed, type ScanSeed } from "@/lib/scan/scan-seed";
 import { PageContainer, PageHeader } from "@/components/PageContainer";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -46,6 +47,16 @@ export default function NewBinderPage() {
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [seed, setSeed] = useState<ScanSeed | null>(null);
+  const [createdId, setCreatedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const stored = readScanSeed();
+    if (!stored) return;
+    setSeed(stored);
+    setName(stored.suggestedName);
+    setType("FREE");
+  }, []);
 
   useEffect(() => {
     fetch(`${API_URL}/tcg-games`)
@@ -126,6 +137,24 @@ export default function NewBinderPage() {
             : (data.message ?? "Impossibile creare il binder"),
         );
       }
+      if (seed) {
+        const expandable = type === "FREE" || type === "GAME";
+        const failed: string[] = [];
+        for (const card of seed.cards) {
+          try {
+            await addCardToBinder(data.id, card.id, { expandIfFull: expandable });
+          } catch {
+            failed.push(card.name);
+          }
+        }
+        clearScanSeed();
+        if (failed.length > 0) {
+          setCreatedId(data.id);
+          setError(`Binder creato. Non ho inserito: ${failed.join(", ")}`);
+          setSubmitting(false);
+          return;
+        }
+      }
       router.push(`/binders/${data.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossibile creare il binder");
@@ -138,13 +167,38 @@ export default function NewBinderPage() {
       <PageHeader
         eyebrow="Nuovo"
         title="Crea binder"
-        description="Scegli tipo, layout e contenuto iniziale."
+        description={
+          seed
+            ? "Il nome è già pronto e le carte scansionate verranno inserite appena crei il binder."
+            : "Scegli tipo, layout e contenuto iniziale."
+        }
         action={
           <Button href="/binders" variant="ghost" size="sm">
             Annulla
           </Button>
         }
       />
+
+      {seed && (
+        <Panel className="flex flex-col gap-3 p-4 sm:p-5">
+          <p className="text-sm font-medium text-foreground">Carte dalla scansione</p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {seed.cards.map((card) => (
+              <div key={card.id} className="w-24 shrink-0">
+                <div className="flex aspect-[5/7] items-center justify-center overflow-hidden rounded-[var(--radius-sm)] border border-border bg-background">
+                  {card.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={card.image} alt="" className="h-full w-full object-contain" />
+                  ) : (
+                    <span className="px-1 text-center text-[10px] text-foreground-muted">{card.name}</span>
+                  )}
+                </div>
+                <p className="mt-1 truncate text-xs font-medium text-foreground">{card.name}</p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
 
       <Panel elevated className="p-5 sm:p-6">
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
@@ -337,6 +391,11 @@ export default function NewBinderPage() {
             <p className="rounded-[var(--radius-md)] bg-danger-soft px-3 py-2 text-sm text-danger-foreground">
               {error}
             </p>
+          )}
+          {createdId && (
+            <Button href={`/binders/${createdId}`} variant="secondary">
+              Apri il binder creato
+            </Button>
           )}
 
           <Button type="submit" variant="ember" disabled={submitting} className="w-full">
