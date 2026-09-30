@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Camera, ImagePlus } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -24,62 +24,54 @@ export function LiveCamera({
   const quadsRef = useRef<Quad[]>([]);
   const cvRef = useRef<Awaited<ReturnType<typeof loadOpenCv>> | null>(null);
 
-  const streamRef = useRef<MediaStream | null>(null);
-  const openTicket = useRef(0);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [tracker, setTracker] = useState<TrackerState>("loading");
   const [tracked, setTracked] = useState(0);
   const [trackNote, setTrackNote] = useState<string | null>(null);
 
-  const openCamera = useCallback(async () => {
-    const ticket = ++openTicket.current;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let cancelled = false;
     setCameraReady(false);
     setCameraError(null);
 
-    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError("La fotocamera richiede una pagina https. Carica una foto.");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("Fotocamera non disponibile. Carica una foto.");
       return;
     }
 
-    try {
-      const stream = await requestCamera();
-      if (ticket !== openTicket.current) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      streamRef.current = stream;
-      const video = videoRef.current;
-      if (!video) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      video.muted = true;
-      video.playsInline = true;
-      video.srcObject = stream;
-      setCameraReady(true);
-      try {
-        await video.play();
-      } catch {
-        // The stream is attached. A visible autoPlay element retries playback.
-      }
-    } catch (error) {
-      if (ticket !== openTicket.current) return;
-      setCameraError(cameraFailureMessage(error));
-    }
-  }, []);
+    navigator.mediaDevices
+      .getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      })
+      .then(async (next) => {
+        if (cancelled) {
+          next.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        stream = next;
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = next;
+          await video.play();
+        }
+        if (!cancelled) setCameraReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setCameraError("Fotocamera non disponibile. Carica una foto.");
+      });
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => void openCamera(), 0);
     return () => {
-      openTicket.current += 1;
-      window.clearTimeout(timer);
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
+      cancelled = true;
+      stream?.getTracks().forEach((track) => track.stop());
     };
-  }, [openCamera]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -224,22 +216,19 @@ export function LiveCamera({
 
   return (
     <div className="mx-auto flex w-full max-w-lg flex-col gap-4">
-      <div className="relative aspect-[3/4] overflow-hidden rounded-[var(--radius-xl)] border border-border bg-black shadow-md sm:aspect-[4/3]">
+      <div className="relative overflow-hidden rounded-[var(--radius-xl)] border border-border bg-black shadow-md">
         <video
           ref={videoRef}
           playsInline
           muted
           autoPlay
-          className="absolute inset-0 h-full w-full object-contain"
+          className={`aspect-[3/4] w-full object-contain sm:aspect-[4/3] ${cameraReady ? "block" : "hidden"}`}
         />
         <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
         {!cameraReady && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black px-6 text-center">
+          <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-3 px-6 text-center sm:aspect-[4/3]">
             <Camera className="h-8 w-8 text-foreground-muted" aria-hidden />
             <p className="text-sm text-foreground-muted">{cameraError ?? "Apro la fotocamera…"}</p>
-            <Button variant="ember" disabled={busy} onClick={() => void openCamera()}>
-              Apri fotocamera
-            </Button>
           </div>
         )}
         {cameraReady && tracker === "ready" && (
@@ -284,48 +273,6 @@ export function LiveCamera({
       </p>
     </div>
   );
-}
-
-async function requestCamera() {
-  const attempts: MediaStreamConstraints[] = [
-    {
-      audio: false,
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
-      },
-    },
-    { audio: false, video: { facingMode: { ideal: "environment" } } },
-    { audio: false, video: true },
-  ];
-  let last: unknown;
-  for (const constraints of attempts) {
-    try {
-      return await navigator.mediaDevices.getUserMedia(constraints);
-    } catch (error) {
-      last = error;
-      const name = error instanceof DOMException ? error.name : "";
-      if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError") {
-        throw error;
-      }
-    }
-  }
-  throw last instanceof Error ? last : new Error("Fotocamera non disponibile");
-}
-
-function cameraFailureMessage(error: unknown) {
-  const name = error instanceof DOMException ? error.name : "";
-  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-    return "Accesso alla fotocamera negato. Consenti la fotocamera al browser, oppure carica una foto.";
-  }
-  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
-    return "Nessuna fotocamera trovata. Carica una foto.";
-  }
-  if (name === "NotReadableError" || name === "TrackStartError") {
-    return "La fotocamera è già in uso. Chiudi l’altra app e riprova, oppure carica una foto.";
-  }
-  return "Non riesco ad aprire la fotocamera. Riprova o carica una foto.";
 }
 
 function fittedVideoRect(video: HTMLVideoElement) {
