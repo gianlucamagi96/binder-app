@@ -167,12 +167,17 @@ export function ScanStudio() {
     setStep("capture");
   }
 
+  function closeCamera() {
+    if (window.history.length > 1) router.back();
+    else router.push("/dashboard");
+  }
+
   return (
     <PageContainer className="gap-8">
       <PageHeader
         eyebrow="Fotocamera"
         title="Scansione"
-        description="Inquadra le carte: i bordi rossi ti aiutano a centrarle. L’identificazione parte solo quando scatti."
+        description="Controlla le carte riconosciute e scegli in quale binder inserirle."
         action={
           step !== "capture" && step !== "analyzing" ? (
             <Button variant="ghost" size="sm" onClick={retake}>
@@ -182,24 +187,18 @@ export function ScanStudio() {
         }
       />
 
-      {captureError && step === "capture" && (
-        <p className="text-sm text-danger-foreground">{captureError}</p>
-      )}
-      {formatError && step === "capture" && (
-        <EmptyState
-          tone="error"
-          title="Risposta inattesa"
-          description={formatError}
-          action={
-            <Button variant="secondary" onClick={() => setFormatError(null)}>
-              Riprova
-            </Button>
-          }
-        />
-      )}
-
       {step === "capture" && (
-        <LiveCamera busy={false} onPhoto={(photo) => void analyze(photo)} onError={setCaptureError} />
+        <LiveCamera
+          busy={false}
+          notice={formatError ? `Risposta inattesa: ${formatError}` : captureError}
+          onPhoto={(photo) => void analyze(photo)}
+          onError={setCaptureError}
+          onDismissNotice={() => {
+            setFormatError(null);
+            setCaptureError(null);
+          }}
+          onClose={closeCamera}
+        />
       )}
 
       {step === "analyzing" && (

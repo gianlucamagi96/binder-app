@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Camera, ImagePlus } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { Camera, CircleHelp, Image as ImageIcon, X, Zap, ZapOff } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
 import { ANALYSIS_EDGE, type Quad } from "@/lib/scan/opencv-track";
 import type { TrackerResponse } from "@/lib/scan/opencv.worker";
 import { photoBlobFromFile, photoBlobFromVideo } from "@/lib/scan/prepare-photo";
 
 type TrackerState = "loading" | "ready" | "hidden";
+
+type ZoomRange = { min: number; max: number; step: number };
+
+type ExtendedCapabilities = MediaTrackCapabilities & {
+  torch?: boolean;
+  zoom?: { min: number; max: number; step?: number };
+};
 
 const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
   audio: false,
@@ -23,23 +29,44 @@ let cameraTail: Promise<void> = Promise.resolve();
 
 export function LiveCamera({
   busy,
+  notice,
   onPhoto,
   onError,
+  onDismissNotice,
+  onClose,
 }: {
   busy: boolean;
+  notice: string | null;
   onPhoto: (photo: Blob) => void;
   onError: (message: string) => void;
+  onDismissNotice: () => void;
+  onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const quadsRef = useRef<Quad[]>([]);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
 
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [tracker, setTracker] = useState<TrackerState>("loading");
   const [tracked, setTracked] = useState(0);
   const [trackNote, setTrackNote] = useState<string | null>(null);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [zoomRange, setZoomRange] = useState<ZoomRange | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const previous = root.style.overflow;
+    root.style.overflow = "hidden";
+    return () => {
+      root.style.overflow = previous;
+    };
+  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -72,6 +99,19 @@ export function LiveCamera({
           next.getTracks().forEach((track) => track.stop());
           return;
         }
+        const track = next.getVideoTracks()[0] ?? null;
+        trackRef.current = track;
+        const capabilities = (track?.getCapabilities?.() ?? {}) as ExtendedCapabilities;
+        setTorchSupported(capabilities.torch === true);
+        if (capabilities.zoom && capabilities.zoom.max > capabilities.zoom.min) {
+          const settings = track?.getSettings() as (MediaTrackSettings & { zoom?: number }) | undefined;
+          setZoomRange({
+            min: capabilities.zoom.min,
+            max: capabilities.zoom.max,
+            step: capabilities.zoom.step || 0.1,
+          });
+          setZoom(settings?.zoom ?? capabilities.zoom.min);
+        }
         setCameraReady(true);
       })
       .catch((error: unknown) => {
@@ -82,6 +122,7 @@ export function LiveCamera({
     return () => {
       cancelled = true;
       controller.abort();
+      trackRef.current = null;
       stream?.getTracks().forEach((track) => track.stop());
       if (video) {
         video.pause();
@@ -251,7 +292,7 @@ export function LiveCamera({
       const quads = tracker === "ready" ? quadsRef.current : [];
       if (quads.length > 0 && video.videoWidth > 0) {
         const fitted = fittedVideoRect(video);
-        context.strokeStyle = "#f87171";
+        context.strokeStyle = "#7db4ff";
         context.lineWidth = 3 * dpr;
         context.setLineDash([14 * dpr, 9 * dpr]);
         context.lineDashOffset = -phase * dpr;
@@ -289,48 +330,142 @@ export function LiveCamera({
     }
   }
 
+  async function toggleTorch() {
+    const track = trackRef.current;
+    if (!track) return;
+    const next = !torchOn;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] });
+      setTorchOn(next);
+    } catch {
+      setTorchSupported(false);
+    }
+  }
+
+  function applyZoom(value: number) {
+    const track = trackRef.current;
+    if (!track || !zoomRange) return;
+    const clamped = Math.min(zoomRange.max, Math.max(zoomRange.min, value));
+    const stepped = Math.round(clamped / zoomRange.step) * zoomRange.step;
+    setZoom(stepped);
+    void track.applyConstraints({ advanced: [{ zoom: stepped } as MediaTrackConstraintSet] }).catch(() => undefined);
+  }
+
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col gap-4">
-      <div className="relative overflow-hidden rounded-[var(--radius-xl)] border border-border bg-black shadow-md">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black text-white">
+      <div className="relative flex-1 overflow-hidden">
         <video
           ref={videoRef}
           playsInline
           muted
           autoPlay
-          className="aspect-[3/4] w-full bg-black object-contain sm:aspect-[4/3]"
+          className="absolute inset-0 h-full w-full bg-black object-cover"
         />
         <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
+
         {!cameraReady && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black px-6 text-center">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black px-8 text-center">
             <Camera className="h-8 w-8 text-foreground-muted" aria-hidden />
             <p className="text-sm text-foreground-muted">{cameraError ?? "Apro la fotocamera…"}</p>
           </div>
         )}
-        {cameraReady && tracker === "ready" && (
-          <div className="absolute left-3 top-3">
-            <Badge tone="warning" mono>
+
+        {cameraReady && <Viewfinder />}
+
+        <div
+          className="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/55 to-transparent px-3 pb-8"
+          style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}
+        >
+          <OverlayButton label="Chiudi la fotocamera" onClick={onClose}>
+            <X className="h-6 w-6" strokeWidth={2} aria-hidden />
+          </OverlayButton>
+          <div className="flex items-center gap-1">
+            <OverlayButton label="Come scansionare" active={helpOpen} onClick={() => setHelpOpen((open) => !open)}>
+              <CircleHelp className="h-6 w-6" strokeWidth={1.75} aria-hidden />
+            </OverlayButton>
+            {torchSupported && (
+              <OverlayButton
+                label={torchOn ? "Spegni la torcia" : "Accendi la torcia"}
+                active={torchOn}
+                onClick={() => void toggleTorch()}
+              >
+                {torchOn ? (
+                  <Zap className="h-6 w-6" strokeWidth={1.75} aria-hidden />
+                ) : (
+                  <ZapOff className="h-6 w-6" strokeWidth={1.75} aria-hidden />
+                )}
+              </OverlayButton>
+            )}
+          </div>
+        </div>
+
+        <div
+          className="absolute inset-x-0 flex flex-col items-center gap-2 px-4"
+          style={{ top: "calc(env(safe-area-inset-top) + 4.25rem)" }}
+        >
+          {cameraReady && tracker === "ready" && !helpOpen && !notice && (
+            <Badge tone="accent" mono>
               {tracked === 0 ? "Nessun bordo" : tracked === 1 ? "1 carta" : `${tracked} carte`}
             </Badge>
-          </div>
-        )}
-        {cameraReady && tracker === "loading" && (
-          <div className="absolute inset-x-0 bottom-0 bg-black/55 px-3 py-2 text-center text-xs text-white">
-            Carico il rilevamento dei bordi…
-          </div>
+          )}
+          {helpOpen && (
+            <div className="w-full max-w-sm rounded-[var(--radius-lg)] border border-border bg-surface/95 p-4 text-sm leading-relaxed text-foreground-secondary shadow-lg backdrop-blur-xl">
+              <p className="font-display text-base font-semibold text-foreground">Come scansionare</p>
+              <p className="mt-1">
+                Inquadra una o più carte nel mirino, con il nome leggibile. I bordi blu seguono le carte e servono solo
+                a centrarle: l’identificazione parte quando scatti.
+              </p>
+            </div>
+          )}
+          {notice && (
+            <div
+              role="alert"
+              className="flex w-full max-w-sm items-start gap-3 rounded-[var(--radius-lg)] border border-danger/30 bg-surface/95 p-3 text-sm text-danger-foreground shadow-lg backdrop-blur-xl"
+            >
+              <p className="flex-1">{notice}</p>
+              <button
+                type="button"
+                onClick={onDismissNotice}
+                aria-label="Chiudi avviso"
+                className="-m-1 rounded-[var(--radius-sm)] p-1 text-foreground-muted transition-colors duration-150 hover:text-foreground"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {cameraReady && zoomRange && <ZoomSlider range={zoomRange} value={zoom} onChange={applyZoom} />}
+
+        {cameraReady && (tracker === "loading" || trackNote) && (
+          <p className="absolute inset-x-0 bottom-4 px-16 text-center text-xs text-white/85 [text-shadow:0_1px_3px_rgba(0,0,0,0.7)]">
+            {trackNote ?? "Carico il rilevamento dei bordi…"}
+          </p>
         )}
       </div>
 
-      {trackNote && <p className="text-sm text-foreground-muted">{trackNote}</p>}
-
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button variant="ember" className="flex-1" disabled={!cameraReady || busy} onClick={() => void capture()}>
-          <Camera className="h-4 w-4" aria-hidden />
-          Scatta
-        </Button>
-        <Button variant="secondary" className="flex-1" disabled={busy} onClick={() => fileRef.current?.click()}>
-          <ImagePlus className="h-4 w-4" aria-hidden />
-          Carica una foto
-        </Button>
+      <div
+        className="grid shrink-0 grid-cols-3 items-center border-t border-border bg-surface px-6 pt-5"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.25rem)" }}
+      >
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          aria-label="Carica una foto"
+          className="flex h-12 w-12 items-center justify-center justify-self-start rounded-[var(--radius-md)] text-foreground-secondary transition-colors duration-150 hover:bg-surface-hover hover:text-foreground disabled:opacity-50"
+        >
+          <ImageIcon className="h-7 w-7" strokeWidth={1.5} aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => void capture()}
+          disabled={!cameraReady || busy}
+          aria-label="Scatta"
+          className="group flex h-[4.75rem] w-[4.75rem] items-center justify-center justify-self-center rounded-full border-[3px] border-accent p-1 shadow-[0_0_28px_rgba(59,130,246,0.35)] transition-[opacity,transform,box-shadow] duration-150 active:scale-95 disabled:opacity-40 disabled:shadow-none"
+        >
+          <span className="h-full w-full rounded-full bg-accent transition-colors duration-150 group-hover:bg-accent-hover" />
+        </button>
         <input
           ref={fileRef}
           type="file"
@@ -343,9 +478,110 @@ export function LiveCamera({
           }}
         />
       </div>
-      <p className="text-sm leading-relaxed text-foreground-muted">
-        I rettangoli rossi seguono i bordi e servono solo a inquadrare. La carta viene identificata quando scatti.
-      </p>
+    </div>
+  );
+}
+
+function OverlayButton({
+  label,
+  active = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={active}
+      className={`flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-150 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.5))] ${
+        active ? "bg-white/20 text-white" : "text-white/90 hover:bg-white/10 hover:text-white"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Viewfinder() {
+  const corner = "absolute h-12 w-12 border-white/90 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.45))]";
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-12 pb-10 pt-28">
+      <div className="relative aspect-[63/88] max-h-full w-full max-w-[22rem]">
+        <span className={`${corner} left-0 top-0 rounded-tl-[1.75rem] border-l-[5px] border-t-[5px]`} />
+        <span className={`${corner} right-0 top-0 rounded-tr-[1.75rem] border-r-[5px] border-t-[5px]`} />
+        <span className={`${corner} bottom-0 left-0 rounded-bl-[1.75rem] border-b-[5px] border-l-[5px]`} />
+        <span className={`${corner} bottom-0 right-0 rounded-br-[1.75rem] border-b-[5px] border-r-[5px]`} />
+      </div>
+    </div>
+  );
+}
+
+function ZoomSlider({
+  range,
+  value,
+  onChange,
+}: {
+  range: ZoomRange;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const railRef = useRef<HTMLDivElement>(null);
+  const ratio = (value - range.min) / (range.max - range.min);
+
+  function fromPointer(event: PointerEvent<HTMLDivElement>) {
+    const rect = railRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const position = 1 - (event.clientY - rect.top) / rect.height;
+    onChange(range.min + Math.min(1, Math.max(0, position)) * (range.max - range.min));
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const delta = (range.max - range.min) / 10;
+    if (event.key === "ArrowUp" || event.key === "ArrowRight") {
+      event.preventDefault();
+      onChange(value + delta);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      onChange(value - delta);
+    }
+  }
+
+  return (
+    <div className="absolute bottom-12 right-2 flex flex-col items-center gap-2">
+      <span className="font-mono text-[11px] text-white/90 [text-shadow:0_1px_3px_rgba(0,0,0,0.7)]">
+        {value.toFixed(1)}×
+      </span>
+      <div
+        ref={railRef}
+        role="slider"
+        tabIndex={0}
+        aria-label="Zoom"
+        aria-orientation="vertical"
+        aria-valuemin={range.min}
+        aria-valuemax={range.max}
+        aria-valuenow={Number(value.toFixed(1))}
+        onKeyDown={onKeyDown}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          fromPointer(event);
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) fromPointer(event);
+        }}
+        className="relative h-36 w-10 cursor-pointer touch-none rounded-full outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        <span className="absolute inset-y-3 left-1/2 w-1.5 -translate-x-1/2 rounded-full bg-white/90 shadow-sm" />
+        <span
+          className="absolute left-1/2 h-6 w-6 -translate-x-1/2 translate-y-1/2 rounded-full bg-white shadow-md"
+          style={{ bottom: `calc(0.75rem + ${ratio} * (100% - 1.5rem))` }}
+        />
+      </div>
     </div>
   );
 }
@@ -442,7 +678,7 @@ function scaleQuads(quads: Quad[], back: number): Quad[] {
 }
 
 function fittedVideoRect(video: HTMLVideoElement) {
-  const scale = Math.min(video.clientWidth / video.videoWidth, video.clientHeight / video.videoHeight);
+  const scale = Math.max(video.clientWidth / video.videoWidth, video.clientHeight / video.videoHeight);
   const width = video.videoWidth * scale;
   const height = video.videoHeight * scale;
   return {
