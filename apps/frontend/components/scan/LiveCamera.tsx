@@ -4,10 +4,22 @@ import { useEffect, useRef, useState } from "react";
 import { Camera, ImagePlus } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { loadOpenCv, quadsInVideo, type Quad } from "@/lib/scan/opencv-track";
+import { ANALYSIS_EDGE, type Quad } from "@/lib/scan/opencv-track";
+import type { TrackerResponse } from "@/lib/scan/opencv.worker";
 import { photoBlobFromFile, photoBlobFromVideo } from "@/lib/scan/prepare-photo";
 
 type TrackerState = "loading" | "ready" | "hidden";
+
+const CAMERA_CONSTRAINTS: MediaStreamConstraints = {
+  audio: false,
+  video: {
+    facingMode: { ideal: "environment" },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  },
+};
+
+let cameraTail: Promise<void> = Promise.resolve();
 
 export function LiveCamera({
   busy,
@@ -22,7 +34,6 @@ export function LiveCamera({
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const quadsRef = useRef<Quad[]>([]);
-  const cvRef = useRef<Awaited<ReturnType<typeof loadOpenCv>> | null>(null);
 
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -31,8 +42,10 @@ export function LiveCamera({
   const [trackNote, setTrackNote] = useState<string | null>(null);
 
   useEffect(() => {
-    let stream: MediaStream | null = null;
+    const video = videoRef.current;
+    const controller = new AbortController();
     let cancelled = false;
+    let stream: MediaStream | null = null;
     setCameraReady(false);
     setCameraError(null);
 
@@ -41,118 +54,177 @@ export function LiveCamera({
       return;
     }
 
-    navigator.mediaDevices
-      .getUserMedia({
-        audio: false,
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-      })
+    void acquireCamera(controller.signal)
       .then(async (next) => {
+        stream = next;
+        if (cancelled || !video) {
+          next.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        try {
+          await showPreview(video, next, controller.signal);
+        } catch (error) {
+          next.getTracks().forEach((track) => track.stop());
+          video.srcObject = null;
+          throw error;
+        }
         if (cancelled) {
           next.getTracks().forEach((track) => track.stop());
           return;
         }
-        stream = next;
-        const video = videoRef.current;
-        if (video) {
-          video.srcObject = next;
-          await video.play();
-        }
-        if (!cancelled) setCameraReady(true);
+        setCameraReady(true);
       })
-      .catch(() => {
-        if (!cancelled) setCameraError("Fotocamera non disponibile. Carica una foto.");
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setCameraError(cameraErrorMessage(error));
       });
 
     return () => {
       cancelled = true;
+      controller.abort();
       stream?.getTracks().forEach((track) => track.stop());
+      if (video) {
+        video.pause();
+        video.srcObject = null;
+      }
     };
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    loadOpenCv()
-      .then((cv) => {
-        if (cancelled) return;
-        cvRef.current = cv;
-        setTracker("ready");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setTracker("hidden");
-        setTrackNote("Rilevamento dei bordi non disponibile. Puoi comunque scattare.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!cameraReady) return;
+    const video = videoRef.current;
+    if (!video) return;
 
-  useEffect(() => {
-    if (tracker !== "ready" || !cameraReady) return;
     let stopped = false;
-    let timer = 0;
+    let busyFrame = false;
     let slowFrames = 0;
     let failedFrames = 0;
     let warmed = 0;
-    let interval = 120;
+    let interval = 140;
+    let timer = 0;
+    let readyTimer = 0;
+    let pendingBack = 1;
     const scratch = document.createElement("canvas");
+    let worker: Worker;
+
+    const disable = (note: string) => {
+      if (stopped) return;
+      stopped = true;
+      window.clearTimeout(timer);
+      window.clearTimeout(readyTimer);
+      quadsRef.current = [];
+      setTracked(0);
+      setTracker("hidden");
+      setTrackNote(note);
+      worker.terminate();
+    };
+
+    try {
+      worker = new Worker(new URL("../../lib/scan/opencv.worker.ts", import.meta.url));
+    } catch {
+      setTracker("hidden");
+      setTrackNote("Rilevamento dei bordi non disponibile. Puoi comunque scattare.");
+      return;
+    }
+
+    readyTimer = window.setTimeout(() => {
+      disable("Rilevamento dei bordi non disponibile. Puoi comunque scattare.");
+    }, 35000);
 
     const tick = () => {
+      if (stopped || busyFrame) return;
+      if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+        timer = window.setTimeout(tick, interval);
+        return;
+      }
+      const scale = Math.min(1, ANALYSIS_EDGE / Math.max(video.videoWidth, video.videoHeight));
+      const width = Math.max(1, Math.round(video.videoWidth * scale));
+      const height = Math.max(1, Math.round(video.videoHeight * scale));
+      if (scratch.width !== width) scratch.width = width;
+      if (scratch.height !== height) scratch.height = height;
+      const context = scratch.getContext("2d", { willReadFrequently: true });
+      if (!context) {
+        timer = window.setTimeout(tick, interval);
+        return;
+      }
+      context.drawImage(video, 0, 0, width, height);
+      const pixels = context.getImageData(0, 0, width, height);
+      busyFrame = true;
+      pendingBack = scale === 1 ? 1 : 1 / scale;
+      try {
+        worker.postMessage({ type: "detect", width, height, buffer: pixels.data.buffer }, [pixels.data.buffer]);
+      } catch {
+        busyFrame = false;
+        failedFrames += 1;
+        if (failedFrames >= 3) {
+          disable("Rilevamento dei bordi non disponibile. Puoi comunque scattare.");
+          return;
+        }
+        timer = window.setTimeout(tick, interval);
+      }
+    };
+
+    worker.onmessage = (event: MessageEvent<TrackerResponse>) => {
       if (stopped) return;
-      const video = videoRef.current;
-      const cv = cvRef.current;
-      if (video && cv && video.readyState >= 2) {
-        const started = performance.now();
-        try {
-          const quads = quadsInVideo(cv, video, scratch);
-          quadsRef.current = quads;
-          failedFrames = 0;
-          setTracked((current) => (current === quads.length ? current : quads.length));
-        } catch {
-          failedFrames += 1;
-          if (failedFrames >= 3) {
-            quadsRef.current = [];
-            setTracked(0);
-            setTracker("hidden");
-            setTrackNote("Rilevamento dei bordi non disponibile. Puoi comunque scattare.");
-            return;
-          }
+      const message = event.data;
+      if (message.type === "ready") {
+        window.clearTimeout(readyTimer);
+        setTrackNote(null);
+        setTracker("ready");
+        timer = window.setTimeout(tick, 120);
+        return;
+      }
+      if (message.type === "failed") {
+        disable("Rilevamento dei bordi non disponibile. Puoi comunque scattare.");
+        return;
+      }
+      if (message.type === "detect-error") {
+        busyFrame = false;
+        failedFrames += 1;
+        if (failedFrames >= 3) {
+          disable("Rilevamento dei bordi non disponibile. Puoi comunque scattare.");
+          return;
         }
-        const elapsed = performance.now() - started;
-        warmed += 1;
-        if (warmed <= 3) {
-          interval = 150;
-        } else if (elapsed > 250) {
-          slowFrames += 1;
-          interval = 180;
-          if (slowFrames >= 5) {
-            quadsRef.current = [];
-            setTracked(0);
-            setTracker("hidden");
-            setTrackNote("Il rilevamento live è troppo pesante su questo dispositivo. Puoi comunque scattare.");
-            return;
-          }
-        } else {
-          slowFrames = 0;
-          interval = elapsed > 110 ? 150 : 120;
+        timer = window.setTimeout(tick, interval);
+        return;
+      }
+      busyFrame = false;
+      failedFrames = 0;
+      quadsRef.current = scaleQuads(message.quads, pendingBack);
+      setTracked((current) => (current === message.quads.length ? current : message.quads.length));
+      warmed += 1;
+      if (warmed > 3 && message.ms > 250) {
+        slowFrames += 1;
+        interval = 220;
+        if (slowFrames >= 5) {
+          disable("Il rilevamento live è troppo pesante su questo dispositivo. Puoi comunque scattare.");
+          return;
         }
+      } else if (warmed > 3) {
+        slowFrames = 0;
+        interval = message.ms > 110 ? 180 : 140;
       }
       timer = window.setTimeout(tick, interval);
     };
 
-    timer = window.setTimeout(tick, 120);
+    worker.onerror = (event) => {
+      event.preventDefault();
+      disable("Rilevamento dei bordi non disponibile. Puoi comunque scattare.");
+    };
+
+    worker.postMessage({ type: "start" });
+
     return () => {
       stopped = true;
       window.clearTimeout(timer);
+      window.clearTimeout(readyTimer);
+      worker.terminate();
       quadsRef.current = [];
     };
-  }, [tracker, cameraReady]);
+  }, [cameraReady]);
 
   useEffect(() => {
+    if (!cameraReady) return;
     const canvas = overlayRef.current;
     const video = videoRef.current;
     if (!canvas || !video) return;
@@ -171,7 +243,10 @@ export function LiveCamera({
         canvas.height = pixelHeight;
       }
       const context = canvas.getContext("2d");
-      if (!context) return;
+      if (!context) {
+        frame = window.requestAnimationFrame(draw);
+        return;
+      }
       context.clearRect(0, 0, canvas.width, canvas.height);
       const quads = tracker === "ready" ? quadsRef.current : [];
       if (quads.length > 0 && video.videoWidth > 0) {
@@ -222,11 +297,11 @@ export function LiveCamera({
           playsInline
           muted
           autoPlay
-          className={`aspect-[3/4] w-full object-contain sm:aspect-[4/3] ${cameraReady ? "block" : "hidden"}`}
+          className="aspect-[3/4] w-full bg-black object-contain sm:aspect-[4/3]"
         />
         <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
         {!cameraReady && (
-          <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-3 px-6 text-center sm:aspect-[4/3]">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black px-6 text-center">
             <Camera className="h-8 w-8 text-foreground-muted" aria-hidden />
             <p className="text-sm text-foreground-muted">{cameraError ?? "Apro la fotocamera…"}</p>
           </div>
@@ -273,6 +348,97 @@ export function LiveCamera({
       </p>
     </div>
   );
+}
+
+function acquireCamera(signal: AbortSignal): Promise<MediaStream> {
+  const previous = cameraTail;
+  let release = () => {};
+  cameraTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  return previous.catch(() => undefined).then(() => openStream(signal).finally(release));
+}
+
+function openStream(signal: AbortSignal): Promise<MediaStream> {
+  if (signal.aborted) return Promise.reject(new DOMException("Richiesta fotocamera annullata", "AbortError"));
+
+  const pending = navigator.mediaDevices.getUserMedia({
+    ...CAMERA_CONSTRAINTS,
+    signal,
+  } as MediaStreamConstraints);
+  pending.then(
+    (stream) => {
+      if (signal.aborted) stream.getTracks().forEach((track) => track.stop());
+    },
+    () => undefined,
+  );
+
+  const aborted = new Promise<never>((_, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Richiesta fotocamera annullata", "AbortError"));
+      return;
+    }
+    signal.addEventListener(
+      "abort",
+      () => reject(new DOMException("Richiesta fotocamera annullata", "AbortError")),
+      { once: true },
+    );
+  });
+
+  return Promise.race([pending, aborted]);
+}
+
+function showPreview(video: HTMLVideoElement, stream: MediaStream, signal: AbortSignal): Promise<void> {
+  video.muted = true;
+  video.defaultMuted = true;
+  video.playsInline = true;
+  video.srcObject = stream;
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = 0;
+    const finish = (error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      if (error) reject(error instanceof Error ? error : new Error("timeout"));
+      else resolve();
+    };
+    const onAbort = () => finish(new DOMException("Richiesta fotocamera annullata", "AbortError"));
+    const ready = () => {
+      if (video.videoWidth > 0) finish();
+    };
+    timer = window.setTimeout(() => finish(new Error("timeout")), 8000);
+    signal.addEventListener("abort", onAbort, { once: true });
+    video.addEventListener("loadedmetadata", ready, { once: true });
+    if (video.videoWidth > 0) ready();
+    video.play().then(ready, (error: unknown) => finish(error));
+  });
+}
+
+function cameraErrorMessage(error: unknown): string {
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+      return "Permesso della fotocamera negato. Puoi caricare una foto.";
+    }
+    if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+      return "Nessuna fotocamera trovata. Puoi caricare una foto.";
+    }
+    if (error.name === "NotReadableError" || error.name === "TrackStartError") {
+      return "La fotocamera è già in uso. Chiudila nelle altre app, oppure carica una foto.";
+    }
+  }
+  if (error instanceof Error && error.message === "timeout") {
+    return "La fotocamera non risponde. Puoi caricare una foto.";
+  }
+  return "Fotocamera non disponibile. Carica una foto.";
+}
+
+function scaleQuads(quads: Quad[], back: number): Quad[] {
+  if (back === 1) return quads;
+  return quads.map((quad) => quad.map((point) => ({ x: point.x * back, y: point.y * back })) as Quad);
 }
 
 function fittedVideoRect(video: HTMLVideoElement) {
