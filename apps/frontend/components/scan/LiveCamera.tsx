@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { Camera, CircleHelp, Image as ImageIcon, X, Zap, ZapOff } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { ANALYSIS_EDGE, type Quad } from "@/lib/scan/opencv-track";
 import type { TrackerResponse } from "@/lib/scan/opencv.worker";
-import { photoBlobFromFile, photoBlobFromVideo } from "@/lib/scan/prepare-photo";
+import { photoBlobFromFile, photoBlobFromVideo, type SourceRegion } from "@/lib/scan/prepare-photo";
 
 type TrackerState = "loading" | "ready" | "hidden";
 
@@ -47,6 +55,7 @@ export function LiveCamera({
   const fileRef = useRef<HTMLInputElement>(null);
   const quadsRef = useRef<Quad[]>([]);
   const trackRef = useRef<MediaStreamTrack | null>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
 
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -315,7 +324,8 @@ export function LiveCamera({
     const video = videoRef.current;
     if (!video) return;
     try {
-      onPhoto(await photoBlobFromVideo(video));
+      const frame = frameRef.current;
+      onPhoto(await photoBlobFromVideo(video, frame ? frameRegion(video, frame) : undefined));
     } catch (error) {
       onError(error instanceof Error ? error.message : "Impossibile scattare");
     }
@@ -370,7 +380,7 @@ export function LiveCamera({
           </div>
         )}
 
-        {cameraReady && <Viewfinder />}
+        {cameraReady && <Viewfinder frameRef={frameRef} />}
 
         <div
           className="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/55 to-transparent px-3 pb-8"
@@ -508,11 +518,11 @@ function OverlayButton({
   );
 }
 
-function Viewfinder() {
+function Viewfinder({ frameRef }: { frameRef: Ref<HTMLDivElement> }) {
   const corner = "absolute h-12 w-12 border-white/90 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.45))]";
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-12 pb-10 pt-28">
-      <div className="relative aspect-[63/88] max-h-full w-full max-w-[22rem]">
+      <div ref={frameRef} className="relative aspect-[63/88] max-h-full w-full max-w-[22rem]">
         <span className={`${corner} left-0 top-0 rounded-tl-[1.75rem] border-l-[5px] border-t-[5px]`} />
         <span className={`${corner} right-0 top-0 rounded-tr-[1.75rem] border-r-[5px] border-t-[5px]`} />
         <span className={`${corner} bottom-0 left-0 rounded-bl-[1.75rem] border-b-[5px] border-l-[5px]`} />
@@ -675,6 +685,20 @@ function cameraErrorMessage(error: unknown): string {
 function scaleQuads(quads: Quad[], back: number): Quad[] {
   if (back === 1) return quads;
   return quads.map((quad) => quad.map((point) => ({ x: point.x * back, y: point.y * back })) as Quad);
+}
+
+function frameRegion(video: HTMLVideoElement, frame: HTMLElement): SourceRegion | undefined {
+  const fitted = fittedVideoRect(video);
+  const videoBox = video.getBoundingClientRect();
+  const frameBox = frame.getBoundingClientRect();
+  const scale = fitted.width / video.videoWidth;
+  if (!(scale > 0) || frameBox.width === 0 || frameBox.height === 0) return undefined;
+  const left = Math.max(0, (frameBox.left - videoBox.left - fitted.x) / scale);
+  const top = Math.max(0, (frameBox.top - videoBox.top - fitted.y) / scale);
+  const right = Math.min(video.videoWidth, (frameBox.right - videoBox.left - fitted.x) / scale);
+  const bottom = Math.min(video.videoHeight, (frameBox.bottom - videoBox.top - fitted.y) / scale);
+  if (right - left < 1 || bottom - top < 1) return undefined;
+  return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
 function fittedVideoRect(video: HTMLVideoElement) {

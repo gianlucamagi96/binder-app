@@ -3,11 +3,13 @@ import type { ScanBox } from "@/lib/scan/scan-api";
 const MAX_EDGE = 1600;
 const JPEG_QUALITY = 0.82;
 
-export async function photoBlobFromVideo(video: HTMLVideoElement): Promise<Blob> {
+export type SourceRegion = { x: number; y: number; width: number; height: number };
+
+export async function photoBlobFromVideo(video: HTMLVideoElement, region?: SourceRegion): Promise<Blob> {
   if (video.videoWidth === 0 || video.videoHeight === 0) {
     throw new Error("La fotocamera non è ancora pronta.");
   }
-  return rasterToJpeg(video, video.videoWidth, video.videoHeight);
+  return rasterToJpeg(video, video.videoWidth, video.videoHeight, region);
 }
 
 export async function photoBlobFromFile(file: File): Promise<Blob> {
@@ -21,14 +23,19 @@ export async function photoBlobFromFile(file: File): Promise<Blob> {
   }
 }
 
-async function rasterToJpeg(source: CanvasImageSource, width: number, height: number): Promise<Blob> {
-  const scale = Math.min(1, MAX_EDGE / Math.max(width, height));
+async function rasterToJpeg(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  region: SourceRegion = { x: 0, y: 0, width, height },
+): Promise<Blob> {
+  const scale = Math.min(1, MAX_EDGE / Math.max(region.width, region.height));
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(width * scale));
-  canvas.height = Math.max(1, Math.round(height * scale));
+  canvas.width = Math.max(1, Math.round(region.width * scale));
+  canvas.height = Math.max(1, Math.round(region.height * scale));
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Impossibile preparare la foto");
-  context.drawImage(source, 0, 0, canvas.width, canvas.height);
+  context.drawImage(source, region.x, region.y, region.width, region.height, 0, 0, canvas.width, canvas.height);
   const blob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY);
   });
