@@ -79,8 +79,6 @@ function waitUntilReady(): Promise<Cv> {
   if (existing) return Promise.resolve(existing);
 
   return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let poll: ReturnType<typeof setInterval> | undefined;
     const finish = () => {
       const cv = current();
       if (!cv) return;
@@ -88,11 +86,11 @@ function waitUntilReady(): Promise<Cv> {
       clearInterval(poll);
       resolve(cv);
     };
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       clearInterval(poll);
       reject(new Error("OpenCV non disponibile"));
     }, 20000);
-    poll = setInterval(finish, 100);
+    const poll = setInterval(finish, 100);
     const cv = scope.cv;
     if (cv) {
       const previous = cv.onRuntimeInitialized;

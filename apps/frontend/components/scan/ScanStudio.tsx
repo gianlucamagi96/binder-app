@@ -47,8 +47,9 @@ export function ScanStudio() {
   }
 
   useEffect(() => {
+    const urls = urlsRef.current;
     return () => {
-      for (const url of urlsRef.current) URL.revokeObjectURL(url);
+      for (const url of urls) URL.revokeObjectURL(url);
     };
   }, []);
 
