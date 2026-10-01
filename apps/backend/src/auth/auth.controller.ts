@@ -16,6 +16,7 @@ import { RefreshDto } from './dto/refresh.dto';
 import { LogoutDto } from './dto/logout.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { GoogleExchangeDto } from './dto/google-exchange.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -69,12 +70,17 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
   async googleCallback(@Req() req: Request & { user: { id: string; email: string } }, @Res() res: Response) {
-    const tokens = await this.authService.loginWithGoogleUser(req.user);
+    const code = await this.authService.createGoogleLoginCode(req.user);
     const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3000';
     const redirectUrl = new URL('/api/auth/google/callback', frontendUrl);
-    redirectUrl.searchParams.set('accessToken', tokens.accessToken);
-    redirectUrl.searchParams.set('refreshToken', tokens.refreshToken);
+    redirectUrl.searchParams.set('code', code);
     res.redirect(redirectUrl.toString());
+  }
+
+  @Post('google/exchange')
+  @HttpCode(200)
+  googleExchange(@Body() dto: GoogleExchangeDto) {
+    return this.authService.exchangeGoogleLoginCode(dto.code);
   }
 
   @Get('me')

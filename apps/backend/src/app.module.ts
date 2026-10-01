@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { TcgGamesModule } from './tcg-games/tcg-games.module';
 import { UsersModule } from './users/users.module';
 import { RedisModule } from './redis/redis.module';
+import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { BindersModule } from './binders/binders.module';
 import { WishlistModule } from './wishlist/wishlist.module';
@@ -19,6 +20,7 @@ import { ScansModule } from './scans/scans.module';
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     RedisModule,
+    RateLimitModule,
     AuthModule,
     TcgGamesModule,
     UsersModule,

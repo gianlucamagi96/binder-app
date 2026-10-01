@@ -16,18 +16,36 @@ model User {
   googleId     String? @unique
   avatarUrl    String?
 
-  hashedRefreshToken String?
-
-  passwordResetToken      String?   @unique
+  passwordResetToken     String?   @unique
   passwordResetExpiresAt  DateTime?
 
   activeTcgGameCode String?
 
   binders   Binder[]
   wishlists Wishlist[]
+  sessions  Session[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Una sessione per dispositivo. Il refresh token ruota a ogni uso: si salva
+// l'hash di quello attuale e, per pochi secondi, del precedente, così due
+// richieste parallele con lo stesso token non chiudono la sessione.
+model Session {
+  id     String @id
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash         String    @unique
+  previousTokenHash String?
+  rotatedAt         DateTime?
+  expiresAt         DateTime
+
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // Contenitore nominato: un utente può avere più wishlist.

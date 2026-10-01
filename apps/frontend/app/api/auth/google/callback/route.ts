@@ -1,37 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import {
-  ACCESS_TOKEN_COOKIE,
-  ACCESS_TOKEN_MAX_AGE,
-  API_URL,
-  REFRESH_TOKEN_COOKIE,
-  REFRESH_TOKEN_MAX_AGE,
-  cookieOptions,
-  postLoginRedirect,
-  type AuthUser,
-} from "@/lib/auth";
+import { API_URL, postLoginRedirect, type AuthUser } from "@/lib/auth";
+import { setSessionCookies } from "@/lib/server-auth-fetch";
 
+// Il backend rimanda qui con un codice monouso (valido 60 secondi), che viene
+// scambiato con i token server-to-server: i token non passano mai nell'URL.
 export async function GET(request: NextRequest) {
-  const accessToken = request.nextUrl.searchParams.get("accessToken");
-  const refreshToken = request.nextUrl.searchParams.get("refreshToken");
+  const code = request.nextUrl.searchParams.get("code");
+  const failed = NextResponse.redirect(new URL("/login?error=google", request.url));
 
-  if (!accessToken || !refreshToken) {
-    return NextResponse.redirect(new URL("/login?error=google", request.url));
-  }
+  if (!code) return failed;
 
-  const cookieStore = await cookies();
-  cookieStore.set(ACCESS_TOKEN_COOKIE, accessToken, {
-    ...cookieOptions,
-    maxAge: ACCESS_TOKEN_MAX_AGE,
-  });
-  cookieStore.set(REFRESH_TOKEN_COOKIE, refreshToken, {
-    ...cookieOptions,
-    maxAge: REFRESH_TOKEN_MAX_AGE,
-  });
+  const exchangeRes = await fetch(`${API_URL}/auth/google/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  }).catch(() => null);
+
+  if (!exchangeRes?.ok) return failed;
+
+  const tokens: { accessToken: string; refreshToken: string } = await exchangeRes.json();
+  setSessionCookies(await cookies(), tokens);
 
   let redirectPath = "/tcg-picker";
   const meRes = await fetch(`${API_URL}/auth/me`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: { Authorization: `Bearer ${tokens.accessToken}` },
   }).catch(() => null);
 
   if (meRes?.ok) {
