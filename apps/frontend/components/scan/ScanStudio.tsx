@@ -73,7 +73,7 @@ export function ScanStudio() {
           key: crypto.randomUUID(),
           box: detection.box,
           cropUrl: trackUrl(await cropBoxUrl(photo, detection.box)),
-          reading: detection.reading,
+          ambiguous: detection.ambiguous,
           candidates: detection.candidates,
           selected: detection.candidates[0] ?? null,
           accepted: false,

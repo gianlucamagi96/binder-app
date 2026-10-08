@@ -75,3 +75,22 @@ jobs:
       - run: npm test
       - run: npx prisma migrate deploy
       - run: npm run test:e2e
+
+  recognizer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/recognizer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: apps/recognizer/pyproject.toml
+      # Niente torch né modello: i test usano un embedder finto. FAISS serve
+      # ai test di indice, pipeline e verifica.
+      - run: pip install -e ".[dev]" faiss-cpu
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest

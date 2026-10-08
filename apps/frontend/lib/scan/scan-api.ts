@@ -12,21 +12,15 @@ export type ScanCandidate = {
   localId: string;
   rarity: string;
   set: { id: string; name: string } | null;
-  confidence: number;
-  exactNumber: boolean;
-};
-
-export type ScanReading = {
-  name: string;
-  printedName: string;
-  setNumber: string;
-  setSymbol: string;
+  // Lingua dell'immagine di riferimento più simile alla foto ("en", "it").
+  lang: string;
   confidence: number;
 };
 
 export type ScanDetection = {
   box: ScanBox;
-  reading: ScanReading;
+  // Candidati quasi indistinguibili, di solito ristampe: va scelta a mano.
+  ambiguous: boolean;
   candidates: ScanCandidate[];
 };
 
@@ -60,7 +54,7 @@ export async function submitScan(photo: Blob): Promise<ScanResult> {
     throw new ScanRequestError(messageFrom(data, "Identificazione non riuscita"), res.status);
   }
   if (!data || !Array.isArray(data.detections)) {
-    throw new ScanRequestError("L'AI ha risposto in un formato inatteso. Riprova con una foto più nitida.", 422);
+    throw new ScanRequestError("Risposta inattesa dal servizio di identificazione. Riprova.", 422);
   }
   return { detections: data.detections };
 }

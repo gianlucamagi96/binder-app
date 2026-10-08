@@ -13,5 +13,15 @@ services:
     image: redis:7
     ports:
       - "6379:6379"
+  # Riconoscimento delle carte (apps/recognizer). L'indice si costruisce prima
+  # sul PC con scripts/build_index.py e qui si monta in sola lettura.
+  recognizer:
+    build: ./apps/recognizer
+    ports:
+      - "8000:8000"
+    environment:
+      TORCH_THREADS: "4"
+    volumes:
+      - ./apps/recognizer/data/index:/index:ro
 volumes:
   pgdata:

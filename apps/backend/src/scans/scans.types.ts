@@ -12,19 +12,15 @@ export type ScanCandidate = {
   localId: string;
   rarity: string;
   set: { id: string; name: string } | null;
+  // Lingua dell'immagine di riferimento più simile alla foto.
+  lang: string;
   confidence: number;
-  exactNumber: boolean;
 };
 
 export type ScanDetection = {
   box: ScanBox;
-  reading: {
-    name: string;
-    printedName: string;
-    setNumber: string;
-    setSymbol: string;
-    confidence: number;
-  };
+  // Candidati quasi indistinguibili (di solito ristampe): l'utente deve scegliere.
+  ambiguous: boolean;
   candidates: ScanCandidate[];
 };
 

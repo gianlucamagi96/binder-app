@@ -9,13 +9,13 @@ import { Panel } from "@/components/ui/Panel";
 import { Select } from "@/components/ui/Select";
 import { searchCatalogCards } from "@/lib/catalog";
 import type { BinderListItem } from "@/lib/binders";
-import type { ScanBox, ScanCandidate, ScanReading } from "@/lib/scan/scan-api";
+import type { ScanBox, ScanCandidate } from "@/lib/scan/scan-api";
 
 export type ReviewDetection = {
   key: string;
   box: ScanBox;
   cropUrl: string;
-  reading: ScanReading;
+  ambiguous: boolean;
   candidates: ScanCandidate[];
   selected: ScanCandidate | null;
   accepted: boolean;
@@ -253,10 +253,15 @@ function ReviewCard({
           <h2 className="font-display text-xl font-semibold text-foreground">{match.name}</h2>
           <div className="flex flex-wrap gap-1.5">
             {match.localId && <Badge mono>#{match.localId}</Badge>}
-            <Badge>EN</Badge>
+            {match.lang && <Badge>{match.lang.toUpperCase()}</Badge>}
             {match.set?.name && <Badge>{match.set.name}</Badge>}
             {match.rarity && <Badge tone="ember">{match.rarity}</Badge>}
           </div>
+          {item.ambiguous && alternatives.length > 0 && (
+            <p className="text-sm text-foreground-muted">
+              Ci sono ristampe molto simili: controlla set e numero tra gli altri match.
+            </p>
+          )}
         </div>
       ) : (
         <p className="text-sm text-foreground-muted">
@@ -393,8 +398,9 @@ function toCandidate(result: {
     localId: "",
     rarity: "",
     set: result.set ?? null,
+    // La ricerca manuale usa il catalogo inglese.
+    lang: "en",
     confidence: 1,
-    exactNumber: false,
   };
 }
 

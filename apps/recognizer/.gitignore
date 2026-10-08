@@ -1,0 +1,13 @@
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Immagini di riferimento e indice: si rigenerano con gli script.
+data/
+
+# Foto reali e set sintetico della valutazione.
+eval/photos/
+eval/synthetic*/
+eval/reports/
