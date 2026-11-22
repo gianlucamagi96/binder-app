@@ -77,7 +77,7 @@ export default function BindersPage() {
       )}
 
       {state.status === "loading" && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+          <div className="grid-tiles">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-48 w-full sm:h-52" />
             ))}
@@ -114,7 +114,7 @@ export default function BindersPage() {
       )}
 
       {state.status === "ready" && state.binders.length > 0 && viewReady && view === "grid" && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+        <div className="grid-tiles">
           {state.binders.map((binder) => (
             <BinderTile
               key={binder.id}

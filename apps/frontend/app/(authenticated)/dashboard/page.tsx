@@ -154,7 +154,7 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-foreground">Carte in evidenza</h2>
 
         {featuredCards.status === "loading" && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
+          <div className="grid-cards">
             {Array.from({ length: 12 }).map((_, i) => (
               <Skeleton key={i} className="aspect-[5/7] w-full" />
             ))}
@@ -178,7 +178,7 @@ export default function DashboardPage() {
         )}
 
         {featuredCards.status === "ready" && featuredCards.data.length > 0 && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10">
+          <div className="grid-cards">
             {featuredCards.data.map((card) => (
               <Card key={card.id} card={card} />
             ))}

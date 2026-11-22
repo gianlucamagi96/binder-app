@@ -179,7 +179,7 @@ export default function WishlistDetailPage() {
       </div>
 
       {state.status === "loading" && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className="grid-cards">
           {Array.from({ length: 6 }).map((_, i) => (
             <CardSkeleton key={i} />
           ))}
@@ -211,7 +211,7 @@ export default function WishlistDetailPage() {
       )}
 
       {state.status === "ready" && state.wishlist.items.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className="grid-cards">
           {state.wishlist.items.map((item) => (
             <div key={item.id} className="relative">
               {item.card ? (

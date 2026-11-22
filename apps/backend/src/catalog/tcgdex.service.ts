@@ -23,15 +23,18 @@ import {
   pickIdentifyResults,
   rankIdentifyCandidates,
 } from './identify-cards';
+import {
+  EXCLUDED_SERIES,
+  EXCLUDED_SET_IDS_FALLBACK,
+  isCardInSets,
+} from './excluded-cards';
 
 const CACHE_TTL_SECONDS = 60 * 60 * 12; // 12 ore: espansioni/carte cambiano raramente
 const SEARCH_CACHE_TTL_SECONDS = 60 * 60; // 1 ora: utile per query ripetute (Ctrl+K)
 const EXPANSIONS_PAGE_DEFAULT = 24;
 const SET_DETAIL_CONCURRENCY = 8;
 
-// Le sets con serie.id === 'tcgp' appartengono a "Pokémon TCG Pocket" (gioco
-// digitale, non cartaceo): un binder fisico non deve mostrarle tra le espansioni.
-const EXCLUDED_SERIES = new Set(['tcgp']);
+const EXCLUDED_SERIES_SET = new Set(EXCLUDED_SERIES);
 
 function normalizeSearchText(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -120,7 +123,7 @@ export class TcgdexService {
         break;
       }
       const set = await this.client.set.get(resume.id);
-      if (!set || EXCLUDED_SERIES.has(set.serie.id)) {
+      if (!set || EXCLUDED_SERIES_SET.has(set.serie.id)) {
         continue;
       }
       expansions.push(this.toExpansionDto(set));
@@ -166,7 +169,7 @@ export class TcgdexService {
     }
 
     const set = await this.client.set.get(setId);
-    if (!set || EXCLUDED_SERIES.has(set.serie.id)) {
+    if (!set || EXCLUDED_SERIES_SET.has(set.serie.id)) {
       throw new NotFoundException('Espansione non trovata');
     }
 
@@ -197,7 +200,7 @@ export class TcgdexService {
   }
 
   async getIllustratorCards(name: string): Promise<string[] | null> {
-    const cacheKey = `catalog:illustrator:${name.toLowerCase()}`;
+    const cacheKey = `catalog:illustrator:v2:${name.toLowerCase()}`;
     const cached = await this.redis.getJSON<string[] | null>(cacheKey);
     if (cached) {
       return cached;
@@ -208,7 +211,10 @@ export class TcgdexService {
       return null;
     }
 
-    const cardIds = illustrator.cards.map((card) => card.id);
+    const cardIds = (await this.withoutExcludedCards(illustrator.cards)).map((card) => card.id);
+    if (cardIds.length === 0) {
+      return null;
+    }
     await this.redis.setJSON(cacheKey, cardIds, CACHE_TTL_SECONDS);
     return cardIds;
   }
@@ -225,6 +231,37 @@ export class TcgdexService {
       .sort((a, b) => a.localeCompare(b, 'en'));
     await this.redis.setJSON(cacheKey, names, CACHE_TTL_SECONDS);
     return names;
+  }
+
+  // Id dei set esclusi (Pokémon TCG Pocket), letti da TCGdex e cachati: i
+  // nuovi set Pocket vengono esclusi senza toccare il codice.
+  async getExcludedSetIds(): Promise<string[]> {
+    const cacheKey = 'catalog:excluded-set-ids:v1';
+    const cached = await this.redis.getJSON<string[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const series = await Promise.all(EXCLUDED_SERIES.map((id) => this.client.serie.get(id)));
+      const ids = series.flatMap((serie) => serie?.sets.map((set) => set.id) ?? []);
+      if (ids.length > 0) {
+        await this.redis.setJSON(cacheKey, ids, CACHE_TTL_SECONDS);
+        return ids;
+      }
+    } catch (error) {
+      this.logger.warn(`Elenco set Pocket non disponibile da TCGdex: ${String(error)}`);
+    }
+    return EXCLUDED_SET_IDS_FALLBACK;
+  }
+
+  async isExcludedCard(cardId: string): Promise<boolean> {
+    return isCardInSets(cardId, await this.getExcludedSetIds());
+  }
+
+  private async withoutExcludedCards<T extends { id: string }>(cards: T[]): Promise<T[]> {
+    const excludedSetIds = await this.getExcludedSetIds();
+    return cards.filter((card) => !isCardInSets(card.id, excludedSetIds));
   }
 
   // Dettaglio di una singola carta, cacheato per id: usato sia per arricchire
@@ -261,6 +298,9 @@ export class TcgdexService {
   // TCGdex per l'intera espansione (set.get già include tutte le carte),
   // altrimenti bisognerebbe interrogare TCGdex una volta per carta.
   async getExpansionSummary(setId: string): Promise<ExpansionSummaryDto | null> {
+    if ((await this.getExcludedSetIds()).includes(setId)) {
+      return null;
+    }
     const cacheKey = `catalog:set:${setId}`;
     const cached = await this.redis.getJSON<ExpansionSummaryDto>(cacheKey);
     if (cached) {
@@ -297,7 +337,7 @@ export class TcgdexService {
   ): Promise<PaginatedCardSearchDto> {
     const normalized = normalizeSearchText(query);
     return this.runCardSearch(
-      `catalog:cards:search:${normalized}:${page}:${limit}`,
+      `catalog:cards:search:v2:${normalized}:${page}:${limit}`,
       new Query().like('name', normalized).paginate(page, limit),
       page,
       limit,
@@ -323,7 +363,7 @@ export class TcgdexService {
     if (expansion) searchQuery = searchQuery.like('set.name', expansion);
 
     return this.runCardSearch(
-      `catalog:cards:search:fields:${name}|${artist}|${expansion}:${page}:${limit}`,
+      `catalog:cards:search:v2:fields:${name}|${artist}|${expansion}:${page}:${limit}`,
       searchQuery.paginate(page, limit),
       page,
       limit,
@@ -342,7 +382,7 @@ export class TcgdexService {
       );
     }
 
-    const cacheKey = `catalog:cards:identify:${normalizedName}|${number.toLowerCase()}`;
+    const cacheKey = `catalog:cards:identify:v2:${normalizedName}|${number.toLowerCase()}`;
     const cached = await this.redis.getJSON<IdentifyCardsDto>(cacheKey);
     if (cached) {
       return cached;
@@ -357,9 +397,10 @@ export class TcgdexService {
     };
 
     const resumes = new Map<string, ListedCard>();
+    const excludedSetIds = await this.getExcludedSetIds();
     const remember = (cards: ListedCard[]) => {
       for (const card of cards) {
-        resumes.set(card.id, card);
+        if (!isCardInSets(card.id, excludedSetIds)) resumes.set(card.id, card);
       }
     };
 
@@ -430,9 +471,10 @@ export class TcgdexService {
     }
 
     const results = await this.client.card.list(searchQuery);
+    const kept = await this.withoutExcludedCards(results);
 
     const items = await Promise.all(
-      results.map(async (card) => {
+      kept.map(async (card) => {
         const detail = await this.getCardDetail(card.id);
         return {
           id: card.id,
@@ -448,8 +490,9 @@ export class TcgdexService {
     const dto: PaginatedCardSearchDto = {
       items,
       page,
-      // TCGdex non espone un totale: se la pagina è piena, probabilmente ce n'è un'altra.
-      hasMore: items.length >= limit,
+      // TCGdex non espone un totale: se la pagina è piena, probabilmente ce n'è
+      // un'altra. Si conta prima del filtro Pocket, che può accorciare la pagina.
+      hasMore: results.length >= limit,
     };
 
     await this.redis.setJSON(cacheKey, dto, SEARCH_CACHE_TTL_SECONDS);
@@ -516,7 +559,7 @@ export class TcgdexService {
         ),
       );
       for (const set of details) {
-        if (!set || EXCLUDED_SERIES.has(set.serie.id)) {
+        if (!set || EXCLUDED_SERIES_SET.has(set.serie.id)) {
           continue;
         }
         expansions.push(this.toExpansionDto(set));
@@ -579,7 +622,7 @@ export class TcgdexService {
       // altrimenti la home mostra solo il nome dentro un riquadro vuoto.
       if (
         set &&
-        !EXCLUDED_SERIES.has(set.serie.id) &&
+        !EXCLUDED_SERIES_SET.has(set.serie.id) &&
         set.cards.some((card) => Boolean(card.image))
       ) {
         return set.id;

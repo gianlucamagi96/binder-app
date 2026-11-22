@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TcgdexService } from '../catalog/tcgdex.service';
+import { EXCLUDED_CARD_MESSAGE } from '../catalog/excluded-cards';
 import { CreateBinderDto } from './dto/create-binder.dto';
 import { UpdateSlotDto } from './dto/update-slot.dto';
 
@@ -334,6 +335,9 @@ export class BindersService {
       condition?: string | null;
     } = {};
 
+    if (dto.tcgdexCardId && (await this.tcgdexService.isExcludedCard(dto.tcgdexCardId))) {
+      throw new BadRequestException(EXCLUDED_CARD_MESSAGE);
+    }
     if (dto.tcgdexCardId !== undefined) {
       data.tcgdexCardId = dto.tcgdexCardId;
       if (dto.tcgdexCardId === null) {

@@ -107,7 +107,7 @@ export default function WishlistsPage() {
       )}
 
       {state.status === "loading" && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid-panels">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-40 w-full" />
           ))}
@@ -141,7 +141,7 @@ export default function WishlistsPage() {
       )}
 
       {state.status === "ready" && state.wishlists.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid-panels">
           {state.wishlists.map((wishlist) => (
             <Link
               key={wishlist.id}

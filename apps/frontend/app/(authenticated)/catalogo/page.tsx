@@ -177,17 +177,19 @@ export default function CatalogoPage() {
         description="Cerca carte o espansioni per nome: i risultati si aggiornano mentre digiti."
       />
 
-      <Input
-        label="Cerca nel catalogo"
-        placeholder="Es. Charizard, Obsidian Flames…"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        hint={
-          query.trim().length === 1
-            ? "Un altro carattere per cercare anche le carte"
-            : undefined
-        }
-      />
+      <div className="w-full max-w-2xl">
+        <Input
+          label="Cerca nel catalogo"
+          placeholder="Es. Charizard, Obsidian Flames…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          hint={
+            query.trim().length === 1
+              ? "Un altro carattere per cercare anche le carte"
+              : undefined
+          }
+        />
+      </div>
 
       <section className="flex flex-col gap-4">
         <div className="flex items-center gap-2">
@@ -198,7 +200,7 @@ export default function CatalogoPage() {
         </div>
 
         {!isSearching && featuredState.status === "loading" && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div className="grid-cards">
             {Array.from({ length: 6 }).map((_, i) => (
               <CardSkeleton key={i} />
             ))}
@@ -206,7 +208,7 @@ export default function CatalogoPage() {
         )}
 
         {!isSearching && featuredState.status === "ready" && featuredState.cards.length > 0 && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div className="grid-cards">
             {featuredState.cards.map((card) => (
               <Card key={card.id} card={card} onClick={() => setSelectedCard(card)} />
             ))}
@@ -228,7 +230,7 @@ export default function CatalogoPage() {
         )}
 
         {canSearchCards && cardState.status === "loading" && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <div className="grid-cards">
             {Array.from({ length: 8 }).map((_, i) => (
               <CardSkeleton key={i} />
             ))}
@@ -252,7 +254,7 @@ export default function CatalogoPage() {
 
         {canSearchCards && cardState.status === "ready" && cardState.results.length > 0 && (
           <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            <div className="grid-cards">
               {cardState.results.map((result) => {
                 const card = searchResultToFeaturedCard(result);
                 return (
@@ -288,7 +290,7 @@ export default function CatalogoPage() {
         </div>
 
         {expansionsStatus === "loading" && (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
+          <div className="grid-tiles">
             {Array.from({ length: 10 }).map((_, i) => (
               <ExpansionTileSkeleton key={i} />
             ))}
@@ -323,7 +325,7 @@ export default function CatalogoPage() {
 
         {expansionsStatus === "ready" && expansions.length > 0 && (
           <div className="flex flex-col gap-6">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
+            <div className="grid-tiles">
               {expansions.map((expansion) => (
                 <ExpansionTile
                   key={expansion.id}

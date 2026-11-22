@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { X } from "lucide-react";
 import type { FeaturedCard } from "@/lib/catalog";
@@ -85,6 +85,7 @@ export function BinderOverlay({
         transition={reduceMotion ? { duration: 0 } : undefined}
         onLayoutAnimationStart={() => setIsMorphing(true)}
         onLayoutAnimationComplete={() => setIsMorphing(false)}
+        style={{ "--binder-chrome": "12.5rem" } as CSSProperties}
         className={`flex max-h-[92dvh] w-full flex-1 flex-col gap-5 overflow-y-auto rounded-t-[var(--radius-xl)] border border-border bg-surface p-5 shadow-lg sm:max-h-none sm:rounded-none sm:border-0 sm:p-6 lg:p-8 ${
           isMorphing && !reduceMotion ? "will-change-transform" : ""
         }`}

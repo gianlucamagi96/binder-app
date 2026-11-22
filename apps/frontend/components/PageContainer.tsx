@@ -11,8 +11,8 @@ export function PageContainer({
 }) {
   return (
     <div
-      className={`flex w-full flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-8 xl:px-10 ${
-        narrow ? "mx-auto max-w-xl" : ""
+      className={`mx-auto flex w-full flex-1 flex-col px-4 py-6 sm:px-6 sm:py-8 lg:px-8 xl:px-10 ${
+        narrow ? "max-w-xl" : "max-w-[var(--content-max)]"
       } ${className}`}
     >
       {children}

@@ -121,11 +121,12 @@ export default function BinderDetailPage() {
               size="sm"
               onClick={handleBulkWishlist}
               disabled={bulkPending}
+              title="Aggiungi tutte le carte mancanti alla wishlist"
             >
               <Heart className="h-4 w-4" aria-hidden />
               {bulkPending
                 ? "Aggiunta in corso..."
-                : "Aggiungi tutte le mancanti alla wishlist"}
+                : "Mancanti in wishlist"}
             </Button>
           )}
           <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>

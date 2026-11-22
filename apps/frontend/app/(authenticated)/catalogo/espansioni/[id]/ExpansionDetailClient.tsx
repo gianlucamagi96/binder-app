@@ -112,7 +112,7 @@ export default function ExpansionDetailPage() {
       </div>
 
       {state.status === "loading" && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className="grid-cards">
           {Array.from({ length: 12 }).map((_, i) => (
             <CardSkeleton key={i} />
           ))}
@@ -136,7 +136,7 @@ export default function ExpansionDetailPage() {
       )}
 
       {state.status === "ready" && state.expansion.cards.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div className="grid-cards">
           {state.expansion.cards.map((card) => {
             const highlighted = highlightCardId === card.id;
             return (

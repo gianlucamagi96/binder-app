@@ -87,7 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="sticky top-0 z-30 border-b border-border/80 bg-surface/85 backdrop-blur-xl supports-[backdrop-filter]:bg-surface/70"
         style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        <div className="flex h-14 w-full items-center justify-between gap-3 px-4 sm:h-16 sm:px-6 lg:px-8 xl:px-10">
+        <div className="mx-auto flex h-14 w-full max-w-[var(--content-max)] items-center justify-between gap-3 px-4 sm:h-16 sm:px-6 lg:px-8 xl:px-10">
           <div className="flex items-center gap-6">
             <BrandLogo />
             <nav className="hidden items-center gap-1 md:flex" aria-label="Principale">

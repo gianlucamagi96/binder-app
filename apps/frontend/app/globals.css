@@ -51,6 +51,10 @@
   --radius-xl: 1.25rem;
   --radius-full: 9999px;
 
+  /* Larghezza massima dei contenuti: oltre, su monitor larghi, le pagine
+     restano centrate invece di stirarsi da bordo a bordo. */
+  --content-max: 100rem;
+
   /* Motion */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --duration-fast: 120ms;
@@ -127,6 +131,66 @@ body {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/*
+ * Griglie che si adattano alla larghezza: il numero di colonne cresce con lo
+ * schermo, mentre la dimensione di carte e riquadri resta stabile anche su
+ * monitor molto larghi.
+ */
+.grid-cards,
+.grid-tiles,
+.grid-panels {
+  display: grid;
+  gap: 0.75rem;
+}
+.grid-cards {
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+}
+.grid-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+}
+.grid-panels {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+}
+@media (min-width: 640px) {
+  .grid-cards,
+  .grid-tiles,
+  .grid-panels {
+    gap: 1rem;
+  }
+}
+@media (min-width: 1024px) {
+  .grid-cards {
+    grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+  }
+  .grid-tiles {
+    grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  }
+  .grid-panels {
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  }
+}
+
+/*
+ * Pagina del binder su desktop: la larghezza viene limitata in modo che
+ * l'intera pagina (righe di buste + etichette) stia nell'altezza dello
+ * schermo. --binder-chrome è lo spazio verticale occupato da header,
+ * titolo e controlli sopra la griglia.
+ */
+@media (min-width: 768px) {
+  .binder-fit {
+    --binder-card-w: calc(
+      (100dvh - var(--binder-chrome, 17rem) - 2.5rem - var(--binder-rows) * 1.375rem -
+          (var(--binder-rows) - 1) * 1rem) /
+        var(--binder-rows) * 5 / 7
+    );
+    max-width: max(
+      28rem,
+      calc(var(--binder-cols) * var(--binder-card-w) + (var(--binder-cols) - 1) * 1rem + 2.5rem)
+    );
+    margin-inline: auto;
+  }
 }
 
 .scroll-fade-x {

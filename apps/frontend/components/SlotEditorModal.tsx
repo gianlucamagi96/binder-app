@@ -44,6 +44,14 @@ export function SlotEditorModal({ slot, onClose, onSave }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !saving) onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, saving]);
+
+  useEffect(() => {
     if (query.trim().length < 2) {
       return;
     }
@@ -101,6 +109,10 @@ export function SlotEditorModal({ slot, onClose, onSave }: Props) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="slot-editor-title"
+      data-blocks-binder-keys
+      onClick={(event) => {
+        if (event.target === event.currentTarget && !saving) onClose();
+      }}
     >
       <Panel
         elevated

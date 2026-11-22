@@ -40,6 +40,11 @@ export function BinderPageNavigator({
     if (!keyboardEnabled) return;
 
     function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      // Le frecce servono ai campi di testo e alle finestre aperte sopra il binder.
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (document.querySelector("[data-blocks-binder-keys]")) return;
       if (event.key === "ArrowRight") onNext();
       if (event.key === "ArrowLeft") onPrev();
     }
@@ -91,6 +96,14 @@ export function BinderPageNavigator({
           onInsertComplete={onInsertComplete}
         />
       </div>
+
+      {binder.totalPages > 1 && (
+        <p className="hidden text-center text-xs text-foreground-muted [@media(hover:hover)]:block">
+          Usa <kbd className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px]">←</kbd>{" "}
+          <kbd className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px]">→</kbd> per
+          sfogliare le pagine
+        </p>
+      )}
     </div>
   );
 }

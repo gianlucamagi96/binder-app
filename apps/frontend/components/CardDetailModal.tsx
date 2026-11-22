@@ -149,13 +149,14 @@ export function CardDetailModal({ card, onClose }: Props) {
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
+      data-blocks-binder-keys
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <Panel
         elevated
-        className="flex max-h-[92dvh] w-full max-w-lg flex-col gap-5 overflow-y-auto rounded-t-[var(--radius-xl)] p-5 sm:rounded-[var(--radius-xl)] sm:p-6"
+        className="flex max-h-[92dvh] w-full max-w-lg flex-col gap-5 overflow-y-auto rounded-t-[var(--radius-xl)] p-5 sm:rounded-[var(--radius-xl)] sm:p-6 md:max-w-2xl"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -180,7 +181,7 @@ export function CardDetailModal({ card, onClose }: Props) {
         </div>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-          <div className="mx-auto w-40 shrink-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-background shadow-card sm:mx-0 sm:w-44">
+          <div className="mx-auto w-40 shrink-0 overflow-hidden rounded-[var(--radius-lg)] border border-border bg-background shadow-card sm:mx-0 sm:w-44 md:w-60">
             <div className="relative aspect-[5/7]">
               {card.image ? (
                 // eslint-disable-next-line @next/next/no-img-element

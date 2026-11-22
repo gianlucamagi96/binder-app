@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TcgdexService } from '../catalog/tcgdex.service';
+import { EXCLUDED_CARD_MESSAGE, isCardInSets } from '../catalog/excluded-cards';
 import {
   AddWishlistItemDto,
   CreateWishlistDto,
@@ -107,6 +108,9 @@ export class WishlistService {
   // Idempotente sulla coppia (wishlistId, tcgdexCardId).
   async addItem(userId: string, wishlistId: string, dto: AddWishlistItemDto) {
     await this.findOwnedWishlist(userId, wishlistId);
+    if (await this.tcgdexService.isExcludedCard(dto.tcgdexCardId)) {
+      throw new BadRequestException(EXCLUDED_CARD_MESSAGE);
+    }
 
     const item = await this.prisma.wishlistItem.upsert({
       where: {
@@ -162,12 +166,14 @@ export class WishlistService {
       );
     }
 
+    const excludedSetIds = await this.tcgdexService.getExcludedSetIds();
     const missingCardIds = [
       ...new Set(
         binder.pages
           .flatMap((page) => page.slots)
           .filter((slot) => slot.tcgdexCardId && slot.quantity === 0)
-          .map((slot) => slot.tcgdexCardId as string),
+          .map((slot) => slot.tcgdexCardId as string)
+          .filter((cardId) => !isCardInSets(cardId, excludedSetIds)),
       ),
     ];
 
